@@ -429,7 +429,7 @@ export async function startBrowserStream(): Promise<{ port: number }> {
       ws.on('close', () => clients.delete(ws))
     })
 
-    server.listen(WS_PORT, '127.0.0.1', () => {
+    server.listen(WS_PORT, '0.0.0.0', () => {
       resolve({ port: WS_PORT })
     })
 

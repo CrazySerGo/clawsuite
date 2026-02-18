@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { createFileRoute } from '@tanstack/react-router'
 import WebSocket from 'ws'
+import { getGatewayConfig } from '../../server/gateway'
 
 type GatewayFrame =
   | { type: 'req'; id: string; method: string; params?: unknown }
@@ -27,20 +28,6 @@ type ConnectParams = {
   auth?: { token?: string; password?: string }
   role?: 'operator' | 'node'
   scopes?: Array<string>
-}
-
-function getGatewayConfig() {
-  const url = process.env.CLAWDBOT_GATEWAY_URL?.trim() || 'ws://127.0.0.1:18789'
-  const token = process.env.CLAWDBOT_GATEWAY_TOKEN?.trim() || ''
-  const password = process.env.CLAWDBOT_GATEWAY_PASSWORD?.trim() || ''
-
-  if (!token && !password) {
-    throw new Error(
-      'Missing gateway auth. Set CLAWDBOT_GATEWAY_TOKEN (recommended) or CLAWDBOT_GATEWAY_PASSWORD in the server environment.',
-    )
-  }
-
-  return { url, token, password }
 }
 
 function buildConnectParams(token: string, password: string): ConnectParams {

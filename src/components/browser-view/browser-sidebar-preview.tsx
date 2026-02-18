@@ -55,12 +55,13 @@ function normalizeStatusPayload(payload: unknown): BrowserStatusResponse {
 async function fetchBrowserStatus(): Promise<BrowserStatusResponse> {
   try {
     // Check local stream server status (same server the browser UI uses)
-    const res = await fetch('http://localhost:9223', { signal: AbortSignal.timeout(2000) })
+    const streamHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
+    const res = await fetch(`http://${streamHost}:9223`, { signal: AbortSignal.timeout(2000) })
     if (res.ok) {
       const data = (await res.json()) as Record<string, unknown>
       if (data.running) {
         // Get a fresh screenshot for the preview
-        const ssRes = await fetch('http://localhost:9223', {
+        const ssRes = await fetch(`http://${streamHost}:9223`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'screenshot' }),

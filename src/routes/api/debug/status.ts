@@ -5,12 +5,7 @@ import {
   getActivityStreamDiagnostics,
   sanitizeText,
 } from '../../../server/activity-stream'
-
-const DEFAULT_GATEWAY_URL = 'ws://127.0.0.1:18789'
-
-function readGatewayUrl(): string {
-  return process.env.CLAWDBOT_GATEWAY_URL?.trim() || DEFAULT_GATEWAY_URL
-}
+import { getGatewayConfig } from '../../../server/gateway'
 
 function stripAuthorityAuth(value: string): string {
   if (!value.includes('@')) return value
@@ -44,10 +39,17 @@ export const Route = createFileRoute('/api/debug/status')({
           // endpoint still returns diagnostics while disconnected
         })
 
+        let gatewayUrl = 'Unavailable'
+        try {
+          gatewayUrl = getGatewayConfig().url
+        } catch {
+          // ignore
+        }
+
         const diagnostics = getActivityStreamDiagnostics()
         return json({
           state: diagnostics.status,
-          gatewayUrl: maskGatewayUrl(readGatewayUrl()),
+          gatewayUrl: maskGatewayUrl(gatewayUrl),
           connectedSinceMs: diagnostics.connectedSinceMs,
           lastDisconnectedAtMs: diagnostics.lastDisconnectedAtMs,
           nowMs: Date.now(),

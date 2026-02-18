@@ -157,7 +157,8 @@ export async function startProxy(): Promise<{ port: number; url: string }> {
               let html = Buffer.concat(chunks).toString('utf8')
 
               // Inject <base> tag + navigation interceptor
-              const proxyOrigin = `http://localhost:${PROXY_PORT}`
+              const clientHost = clientReq.headers['host'] || `localhost:${PROXY_PORT}`
+              const proxyOrigin = `http://${clientHost}`
               const baseTag = `<base href="${parsed.origin}/">
 <script>
 // Intercept link clicks to route through proxy
@@ -212,7 +213,7 @@ try { window.parent.postMessage({ type: 'proxy-navigate', url: window.location.h
       clientReq.pipe(proxyReq)
     })
 
-    proxyServer.listen(PROXY_PORT, '127.0.0.1', () => {
+    proxyServer.listen(PROXY_PORT, '0.0.0.0', () => {
       resolve({ port: PROXY_PORT, url: getProxyUrl() })
     })
 

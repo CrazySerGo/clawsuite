@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
+import { getGatewayConfig } from './gateway'
 
 export type DebugAnalysis = {
   summary: string
@@ -59,8 +60,26 @@ const OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 const ANTHROPIC_MODEL = 'claude-sonnet-4-5-20250514'
 const OPENAI_MODEL = 'gpt-4o-mini'
 
+function getGatewayHttpUrl(pathName: string): string {
+  let gatewayUrl = 'ws://127.0.0.1:18789'
+  try {
+    gatewayUrl = getGatewayConfig().url
+  } catch {
+    // ignore
+  }
+
+  try {
+    const parsed = new URL(gatewayUrl)
+    parsed.protocol = parsed.protocol === 'wss:' ? 'https:' : 'http:'
+    parsed.pathname = pathName
+    return parsed.toString()
+  } catch {
+    return `http://127.0.0.1:18789${pathName}`
+  }
+}
+
 // Gateway's OpenAI-compatible endpoint (works with any configured provider)
-const GATEWAY_URL = 'http://127.0.0.1:18789/v1/chat/completions'
+const GATEWAY_URL = getGatewayHttpUrl('/v1/chat/completions')
 const MAX_PROMPT_CHARS = 14_000
 
 function formatLogDate(value: Date): string {
@@ -124,14 +143,14 @@ async function readOpenClawConfig(): Promise<OpenClawConfig | null> {
 async function resolveProvider(): Promise<ResolvedProvider | null> {
   // Try gateway first — works with any configured provider, uses gateway token
   try {
-    const gwTokenEnv = process.env.CLAWDBOT_GATEWAY_TOKEN?.trim()
-    if (gwTokenEnv) {
+    const { token } = getGatewayConfig()
+    if (token) {
       // Quick probe to see if gateway is up
-      const probe = await fetch('http://127.0.0.1:18789/health', {
+      const probe = await fetch(getGatewayHttpUrl('/health'), {
         signal: AbortSignal.timeout(1000),
       }).catch(() => null)
       if (probe?.ok) {
-        return { provider: 'gateway', apiKey: gwTokenEnv }
+        return { provider: 'gateway', apiKey: token }
       }
     }
   } catch { /* gateway not available, fall through */ }

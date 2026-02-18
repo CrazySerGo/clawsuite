@@ -27,7 +27,9 @@ export const Route = createFileRoute('/api/browser')({
 
         if (action === 'status' || action === 'proxy-status') {
           try {
-            return json({ ok: true, proxyUrl: getProxyUrl(), target: getCurrentTarget() })
+            const url = new URL(request.url)
+            const proxyUrl = `http://${url.hostname}:${getProxyPort()}`
+            return json({ ok: true, proxyUrl, target: getCurrentTarget() })
           } catch (err) {
             return json(
               { ok: false, error: err instanceof Error ? err.message : String(err) },
@@ -118,7 +120,9 @@ export const Route = createFileRoute('/api/browser')({
             // Proxy mode — iframe-based browsing
             case 'proxy-start': {
               const result = await startProxy()
-              return json({ ok: true, ...result })
+              const url = new URL(request.url)
+              const proxyUrl = `http://${url.hostname}:${result.port}`
+              return json({ ok: true, ...result, url: proxyUrl })
             }
 
             case 'proxy-stop': {
@@ -132,18 +136,24 @@ export const Route = createFileRoute('/api/browser')({
               let normalizedUrl = url
               if (!normalizedUrl.match(/^https?:\/\//)) normalizedUrl = `https://${normalizedUrl}`
               // Navigate the proxy
-              const proxyUrl = getProxyUrl()
-              await fetch(`${proxyUrl}/__proxy__/navigate?url=${encodeURIComponent(normalizedUrl)}`)
+              const proxyInternalUrl = getProxyUrl()
+              await fetch(`${proxyInternalUrl}/__proxy__/navigate?url=${encodeURIComponent(normalizedUrl)}`)
+              const reqUrl = new URL(request.url)
+              const proxyUrl = `http://${reqUrl.hostname}:${getProxyPort()}`
               return json({ ok: true, proxyUrl, iframeSrc: `${proxyUrl}/?url=${encodeURIComponent(normalizedUrl)}`, url: normalizedUrl })
             }
 
             case 'proxy-status': {
-              return json({ ok: true, proxyUrl: getProxyUrl(), target: getCurrentTarget() })
+              const url = new URL(request.url)
+              const proxyUrl = `http://${url.hostname}:${getProxyPort()}`
+              return json({ ok: true, proxyUrl, target: getCurrentTarget() })
             }
 
             case 'stream-start': {
               const result = await startBrowserStream()
-              return json({ ok: true, wsUrl: `ws://localhost:${result.port}`, ...result })
+              const url = new URL(request.url)
+              const wsUrl = `ws://${url.hostname}:${result.port}`
+              return json({ ok: true, wsUrl, ...result })
             }
 
             default:
