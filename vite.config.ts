@@ -25,7 +25,7 @@ const config = defineConfig(({ mode, isSsrBuild }) => {
 
   return {
     define: (!isSsrBuild && !isTest) ? {
-      'process.env': {},
+      'process.env.NODE_ENV': JSON.stringify(mode),
       'process.platform': '"browser"',
     } : {},
     resolve: {

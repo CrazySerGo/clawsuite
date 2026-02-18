@@ -15,7 +15,12 @@ import { Toaster } from '@/components/ui/toast'
 
 const themeScript = `
 (() => {
-  window.process = window.process || { env: {}, platform: 'browser' };
+  window.process = window.process || {};
+  window.process.env = window.process.env || { NODE_ENV: 'development' };
+  window.process.platform = window.process.platform || 'browser';
+  window.process.browser = true;
+  window.process.version = window.process.version || '';
+  window.process.nextTick = window.process.nextTick || ((cb) => setTimeout(cb, 0));
   try {
     const stored = localStorage.getItem('openclaw-settings')
     const fallback = localStorage.getItem('chat-settings')

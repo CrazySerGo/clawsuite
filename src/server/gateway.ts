@@ -46,8 +46,8 @@ type InflightRequest = {
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000]
 const MAX_RECONNECT_DELAY_MS = 30000
 const HEARTBEAT_INTERVAL_MS = 30000
-const HEARTBEAT_TIMEOUT_MS = 20000
-const HANDSHAKE_TIMEOUT_MS = 15000
+const HEARTBEAT_TIMEOUT_MS = 45000
+const HANDSHAKE_TIMEOUT_MS = 30000
 
 export function getGatewayConfig() {
   const url = process.env.CLAWDBOT_GATEWAY_URL?.trim() || 'ws://127.0.0.1:18789'
@@ -186,12 +186,14 @@ class GatewayClient {
         }
 
         const { url, token, password } = getGatewayConfig()
+        console.log(`[gateway] Connecting to ${url}...`)
         const ws = new WebSocket(url)
 
         this.clearReconnectTimer()
         this.attachSocket(ws)
 
         await this.waitForOpen(ws, HANDSHAKE_TIMEOUT_MS)
+        console.log(`[gateway] WebSocket opened to ${url}`)
 
         if (this.destroyed) {
           ws.terminate()

@@ -75,7 +75,7 @@ export async function fetchHistory(payload: {
 
 export async function fetchGatewayStatus(): Promise<GatewayStatusResponse> {
   const controller = new AbortController()
-  const timeout = window.setTimeout(() => controller.abort(), 2500)
+  const timeout = window.setTimeout(() => controller.abort(), 10000)
 
   try {
     const res = await fetch('/api/ping', { signal: controller.signal })

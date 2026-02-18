@@ -33,8 +33,7 @@ export function LocalBrowser() {
   // Poll stream server for status + thumbnail
   const pollStatus = useCallback(async () => {
     try {
-      const streamHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-      const res = await fetch(`http://${streamHost}:9223`, { signal: AbortSignal.timeout(2000) })
+      const res = await fetch('/api/stream-proxy', { signal: AbortSignal.timeout(2000) })
       if (!res.ok) { setStatus({ running: false, url: '', title: '' }); return }
       const data = await res.json() as Record<string, unknown>
       const running = Boolean(data.running)
@@ -47,8 +46,7 @@ export function LocalBrowser() {
 
       // Get thumbnail screenshot
       if (running) {
-        const streamHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-        const ssRes = await fetch(`http://${streamHost}:9223`, {
+        const ssRes = await fetch('/api/stream-proxy', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'screenshot' }),
@@ -73,8 +71,7 @@ export function LocalBrowser() {
   // Send action to stream server
   const sendAction = useCallback(async (action: string, params?: Record<string, unknown>) => {
     try {
-      const streamHost = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
-      const res = await fetch(`http://${streamHost}:9223`, {
+      const res = await fetch('/api/stream-proxy', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ action, ...params }),
@@ -138,11 +135,11 @@ export function LocalBrowser() {
         title: pageTitle,
         task: instruction,
         pageContent: pageText,
-        browserApi: `POST http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:9223 — actions: navigate(url), click(x,y), type(text), press(key), scroll(direction), back, forward, refresh, content, screenshot`,
+        browserApi: `POST /api/stream-proxy — actions: navigate(url), click(x,y), type(text), press(key), scroll(direction), back, forward, refresh, content, screenshot`,
       })
 
       // Send clean message + hidden context
-      const fullMessage = `${contextMsg}\n\n<details><summary>Page context</summary>\n\n${pageText.slice(0, 1500)}\n\n</details>\n\nBrowser API: \`POST http://${typeof window !== 'undefined' ? window.location.hostname : 'localhost'}:9223\` with \`{ action, ...params }\``
+      const fullMessage = `${contextMsg}\n\n<details><summary>Page context</summary>\n\n${pageText.slice(0, 1500)}\n\n</details>\n\nBrowser API: \`POST /api/stream-proxy\` with \`{ action, ...params }\``
       const sendRes = await fetch('/api/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

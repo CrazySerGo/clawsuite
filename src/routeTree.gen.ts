@@ -42,6 +42,7 @@ import { Route as ApiTerminalStreamRouteImport } from './routes/api/terminal-str
 import { Route as ApiTerminalResizeRouteImport } from './routes/api/terminal-resize'
 import { Route as ApiTerminalInputRouteImport } from './routes/api/terminal-input'
 import { Route as ApiTerminalCloseRouteImport } from './routes/api/terminal-close'
+import { Route as ApiStreamProxyRouteImport } from './routes/api/stream-proxy'
 import { Route as ApiStreamRouteImport } from './routes/api/stream'
 import { Route as ApiSkillsRouteImport } from './routes/api/skills'
 import { Route as ApiSessionsRouteImport } from './routes/api/sessions'
@@ -70,6 +71,7 @@ import { Route as ApiAgentActivityRouteImport } from './routes/api/agent-activit
 import { Route as ApiTasksIndexRouteImport } from './routes/api/tasks/index'
 import { Route as ApiTasksTaskIdRouteImport } from './routes/api/tasks/$taskId'
 import { Route as ApiSessionsSendRouteImport } from './routes/api/sessions/send'
+import { Route as ApiProxyServerSplatRouteImport } from './routes/api/proxy-server/$'
 import { Route as ApiGatewayUsageRouteImport } from './routes/api/gateway/usage'
 import { Route as ApiGatewayStatusRouteImport } from './routes/api/gateway/status'
 import { Route as ApiGatewaySessionsRouteImport } from './routes/api/gateway/sessions'
@@ -255,6 +257,11 @@ const ApiTerminalCloseRoute = ApiTerminalCloseRouteImport.update({
   path: '/api/terminal-close',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiStreamProxyRoute = ApiStreamProxyRouteImport.update({
+  id: '/api/stream-proxy',
+  path: '/api/stream-proxy',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiStreamRoute = ApiStreamRouteImport.update({
   id: '/api/stream',
   path: '/api/stream',
@@ -394,6 +401,11 @@ const ApiSessionsSendRoute = ApiSessionsSendRouteImport.update({
   id: '/send',
   path: '/send',
   getParentRoute: () => ApiSessionsRoute,
+} as any)
+const ApiProxyServerSplatRoute = ApiProxyServerSplatRouteImport.update({
+  id: '/api/proxy-server/$',
+  path: '/api/proxy-server/$',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const ApiGatewayUsageRoute = ApiGatewayUsageRouteImport.update({
   id: '/api/gateway/usage',
@@ -540,6 +552,7 @@ export interface FileRoutesByFullPath {
   '/api/sessions': typeof ApiSessionsRouteWithChildren
   '/api/skills': typeof ApiSkillsRoute
   '/api/stream': typeof ApiStreamRoute
+  '/api/stream-proxy': typeof ApiStreamProxyRoute
   '/api/terminal-close': typeof ApiTerminalCloseRoute
   '/api/terminal-input': typeof ApiTerminalInputRoute
   '/api/terminal-resize': typeof ApiTerminalResizeRoute
@@ -568,6 +581,7 @@ export interface FileRoutesByFullPath {
   '/api/gateway/sessions': typeof ApiGatewaySessionsRoute
   '/api/gateway/status': typeof ApiGatewayStatusRoute
   '/api/gateway/usage': typeof ApiGatewayUsageRoute
+  '/api/proxy-server/$': typeof ApiProxyServerSplatRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
   '/api/tasks/$taskId': typeof ApiTasksTaskIdRoute
   '/api/tasks/': typeof ApiTasksIndexRoute
@@ -621,6 +635,7 @@ export interface FileRoutesByTo {
   '/api/sessions': typeof ApiSessionsRouteWithChildren
   '/api/skills': typeof ApiSkillsRoute
   '/api/stream': typeof ApiStreamRoute
+  '/api/stream-proxy': typeof ApiStreamProxyRoute
   '/api/terminal-close': typeof ApiTerminalCloseRoute
   '/api/terminal-input': typeof ApiTerminalInputRoute
   '/api/terminal-resize': typeof ApiTerminalResizeRoute
@@ -649,6 +664,7 @@ export interface FileRoutesByTo {
   '/api/gateway/sessions': typeof ApiGatewaySessionsRoute
   '/api/gateway/status': typeof ApiGatewayStatusRoute
   '/api/gateway/usage': typeof ApiGatewayUsageRoute
+  '/api/proxy-server/$': typeof ApiProxyServerSplatRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
   '/api/tasks/$taskId': typeof ApiTasksTaskIdRoute
   '/api/tasks': typeof ApiTasksIndexRoute
@@ -704,6 +720,7 @@ export interface FileRoutesById {
   '/api/sessions': typeof ApiSessionsRouteWithChildren
   '/api/skills': typeof ApiSkillsRoute
   '/api/stream': typeof ApiStreamRoute
+  '/api/stream-proxy': typeof ApiStreamProxyRoute
   '/api/terminal-close': typeof ApiTerminalCloseRoute
   '/api/terminal-input': typeof ApiTerminalInputRoute
   '/api/terminal-resize': typeof ApiTerminalResizeRoute
@@ -732,6 +749,7 @@ export interface FileRoutesById {
   '/api/gateway/sessions': typeof ApiGatewaySessionsRoute
   '/api/gateway/status': typeof ApiGatewayStatusRoute
   '/api/gateway/usage': typeof ApiGatewayUsageRoute
+  '/api/proxy-server/$': typeof ApiProxyServerSplatRoute
   '/api/sessions/send': typeof ApiSessionsSendRoute
   '/api/tasks/$taskId': typeof ApiTasksTaskIdRoute
   '/api/tasks/': typeof ApiTasksIndexRoute
@@ -788,6 +806,7 @@ export interface FileRouteTypes {
     | '/api/sessions'
     | '/api/skills'
     | '/api/stream'
+    | '/api/stream-proxy'
     | '/api/terminal-close'
     | '/api/terminal-input'
     | '/api/terminal-resize'
@@ -816,6 +835,7 @@ export interface FileRouteTypes {
     | '/api/gateway/sessions'
     | '/api/gateway/status'
     | '/api/gateway/usage'
+    | '/api/proxy-server/$'
     | '/api/sessions/send'
     | '/api/tasks/$taskId'
     | '/api/tasks/'
@@ -869,6 +889,7 @@ export interface FileRouteTypes {
     | '/api/sessions'
     | '/api/skills'
     | '/api/stream'
+    | '/api/stream-proxy'
     | '/api/terminal-close'
     | '/api/terminal-input'
     | '/api/terminal-resize'
@@ -897,6 +918,7 @@ export interface FileRouteTypes {
     | '/api/gateway/sessions'
     | '/api/gateway/status'
     | '/api/gateway/usage'
+    | '/api/proxy-server/$'
     | '/api/sessions/send'
     | '/api/tasks/$taskId'
     | '/api/tasks'
@@ -951,6 +973,7 @@ export interface FileRouteTypes {
     | '/api/sessions'
     | '/api/skills'
     | '/api/stream'
+    | '/api/stream-proxy'
     | '/api/terminal-close'
     | '/api/terminal-input'
     | '/api/terminal-resize'
@@ -979,6 +1002,7 @@ export interface FileRouteTypes {
     | '/api/gateway/sessions'
     | '/api/gateway/status'
     | '/api/gateway/usage'
+    | '/api/proxy-server/$'
     | '/api/sessions/send'
     | '/api/tasks/$taskId'
     | '/api/tasks/'
@@ -1034,6 +1058,7 @@ export interface RootRouteChildren {
   ApiSessionsRoute: typeof ApiSessionsRouteWithChildren
   ApiSkillsRoute: typeof ApiSkillsRoute
   ApiStreamRoute: typeof ApiStreamRoute
+  ApiStreamProxyRoute: typeof ApiStreamProxyRoute
   ApiTerminalCloseRoute: typeof ApiTerminalCloseRoute
   ApiTerminalInputRoute: typeof ApiTerminalInputRoute
   ApiTerminalResizeRoute: typeof ApiTerminalResizeRoute
@@ -1051,6 +1076,7 @@ export interface RootRouteChildren {
   ApiGatewaySessionsRoute: typeof ApiGatewaySessionsRoute
   ApiGatewayStatusRoute: typeof ApiGatewayStatusRoute
   ApiGatewayUsageRoute: typeof ApiGatewayUsageRoute
+  ApiProxyServerSplatRoute: typeof ApiProxyServerSplatRoute
   ApiTasksTaskIdRoute: typeof ApiTasksTaskIdRoute
   ApiTasksIndexRoute: typeof ApiTasksIndexRoute
 }
@@ -1288,6 +1314,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiTerminalCloseRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/stream-proxy': {
+      id: '/api/stream-proxy'
+      path: '/api/stream-proxy'
+      fullPath: '/api/stream-proxy'
+      preLoaderRoute: typeof ApiStreamProxyRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/stream': {
       id: '/api/stream'
       path: '/api/stream'
@@ -1483,6 +1516,13 @@ declare module '@tanstack/react-router' {
       fullPath: '/api/sessions/send'
       preLoaderRoute: typeof ApiSessionsSendRouteImport
       parentRoute: typeof ApiSessionsRoute
+    }
+    '/api/proxy-server/$': {
+      id: '/api/proxy-server/$'
+      path: '/api/proxy-server/$'
+      fullPath: '/api/proxy-server/$'
+      preLoaderRoute: typeof ApiProxyServerSplatRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/api/gateway/usage': {
       id: '/api/gateway/usage'
@@ -1745,6 +1785,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiSessionsRoute: ApiSessionsRouteWithChildren,
   ApiSkillsRoute: ApiSkillsRoute,
   ApiStreamRoute: ApiStreamRoute,
+  ApiStreamProxyRoute: ApiStreamProxyRoute,
   ApiTerminalCloseRoute: ApiTerminalCloseRoute,
   ApiTerminalInputRoute: ApiTerminalInputRoute,
   ApiTerminalResizeRoute: ApiTerminalResizeRoute,
@@ -1762,6 +1803,7 @@ const rootRouteChildren: RootRouteChildren = {
   ApiGatewaySessionsRoute: ApiGatewaySessionsRoute,
   ApiGatewayStatusRoute: ApiGatewayStatusRoute,
   ApiGatewayUsageRoute: ApiGatewayUsageRoute,
+  ApiProxyServerSplatRoute: ApiProxyServerSplatRoute,
   ApiTasksTaskIdRoute: ApiTasksTaskIdRoute,
   ApiTasksIndexRoute: ApiTasksIndexRoute,
 }
