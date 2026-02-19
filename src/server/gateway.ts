@@ -243,7 +243,9 @@ export async function buildConnectParams(
     scopes,
     device: {
       id: identity.deviceId,
-      publicKey: base64UrlEncode(derivePublicKeyRaw(identity.publicKeyPem)),
+      publicKey: base64UrlEncode(
+        await derivePublicKeyRaw(identity.publicKeyPem),
+      ),
       signature,
       signedAt: signedAtMs,
       nonce,
@@ -409,9 +411,19 @@ class GatewayClient {
           })
         } else {
           const WS = (await import('ws')).default
+          let origin = 'http://localhost:3000'
+          try {
+            const oUrl = new URL(url)
+            oUrl.protocol = oUrl.protocol === 'wss:' ? 'https:' : 'http:'
+            oUrl.pathname = ''
+            origin = oUrl.toString().replace(/\/$/, '')
+          } catch {
+            /* fallback */
+          }
+
           ws = new WS(url, {
-            origin: 'http://localhost:3000',
-            headers: { Origin: 'http://localhost:3000' },
+            origin,
+            headers: { Origin: origin },
           }) as unknown as AnyWebSocket
         }
 
@@ -431,6 +443,7 @@ class GatewayClient {
 
         // Wait for connect.challenge to get nonce
         const nonce = await new Promise<string | undefined>((resolve) => {
+          let resolved = false
           const challengeHandler = (data: any) => {
             try {
               const f = JSON.parse(rawDataToString(data))
@@ -438,27 +451,27 @@ class GatewayClient {
                 (f.type === 'event' || f.type === 'evt') &&
                 f.event === 'connect.challenge'
               ) {
-                ws.removeListener!('message', challengeHandler)
-                resolve(f.payload?.nonce || undefined)
-                return
+                if (!resolved) {
+                  resolved = true
+                  if (ws.removeListener)
+                    ws.removeListener('message', challengeHandler)
+                  resolve(f.payload?.nonce || undefined)
+                }
               }
             } catch {
               /* ignore */
             }
           }
-          if (ws.removeAllListeners) ws.removeAllListeners('message')
           ws.on('message', challengeHandler)
           // Fallback if no challenge (older gateway)
           setTimeout(() => {
-            if (ws.removeListener)
-              ws.removeListener('message', challengeHandler)
-            resolve(undefined)
+            if (!resolved) {
+              resolved = true
+              if (ws.removeListener)
+                ws.removeListener('message', challengeHandler)
+              resolve(undefined)
+            }
           }, 3000)
-        })
-        // Re-attach the normal message handler
-        if (ws.removeAllListeners) ws.removeAllListeners('message')
-        ws.on('message', (data: any) => {
-          this.handleMessage(data)
         })
 
         const connectId = generateId()
@@ -689,12 +702,13 @@ class GatewayClient {
   }
 
   private async sendFrame(frame: GatewayFrame): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    const OPEN = this.ws?.OPEN ?? 1
+    if (!this.ws || this.ws.readyState !== OPEN) {
       throw new Error('Gateway connection not open')
     }
 
     await new Promise<void>((resolve, reject) => {
-      this.ws?.send(JSON.stringify(frame), (err) => {
+      this.ws?.send(JSON.stringify(frame), (err: any) => {
         if (err) {
           reject(err)
           return

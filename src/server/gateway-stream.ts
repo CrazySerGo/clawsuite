@@ -20,21 +20,67 @@ class GatewayStreamConnection extends EventEmitter {
 
   async open(): Promise<void> {
     const { url, token, password } = getGatewayConfig()
-    const connectParams = buildConnectParams(token, password)
-    const ws = new WebSocket(url, { origin: 'http://localhost:3000', headers: { Origin: 'http://localhost:3000' } })
-    this.ws = ws
 
-    await this.waitForOpen(ws)
+    // Wait for connect.challenge to get nonce
+    const ws = new WebSocket(url)
+    const nonce = await new Promise<string | undefined>((resolve) => {
+      let resolved = false
+      const challengeHandler = (data: any) => {
+        try {
+          const f = JSON.parse(data.toString())
+          if (
+            (f.type === 'event' || f.type === 'evt') &&
+            f.event === 'connect.challenge'
+          ) {
+            if (!resolved) {
+              resolved = true
+              ws.removeListener('message', challengeHandler)
+              resolve(f.payload?.nonce || undefined)
+            }
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      ws.on('message', challengeHandler)
+      setTimeout(() => {
+        if (!resolved) {
+          resolved = true
+          ws.removeListener('message', challengeHandler)
+          resolve(undefined)
+        }
+      }, 3000)
+    })
+    ws.close()
 
-    ws.on('message', (data) => {
+    const connectParams = await buildConnectParams(token, password, nonce)
+    let origin = 'http://localhost:3000'
+    try {
+      const oUrl = new URL(url)
+      oUrl.protocol = oUrl.protocol === 'wss:' ? 'https:' : 'http:'
+      oUrl.pathname = ''
+      origin = oUrl.toString().replace(/\/$/, '')
+    } catch {
+      /* fallback */
+    }
+
+    const ws2 = new WebSocket(url, {
+      origin,
+      headers: { Origin: origin },
+    })
+    this.ws = ws2
+
+    await this.waitForOpen(ws2)
+
+    ws2.on('message', (data) => {
       this.handleMessage(data)
     })
-    ws.on('close', () => {
+    ws2.on('close', () => {
       this.closed = true
       this.failPending(new Error('Gateway connection closed'))
       this.emit('close')
     })
-    ws.on('error', (err) => {
+    ws2.on('error', (err) => {
       this.failPending(err instanceof Error ? err : new Error(String(err)))
       this.emit('error', err)
     })
