@@ -45,16 +45,42 @@ type InflightRequest = {
 
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000]
 const MAX_RECONNECT_DELAY_MS = 30000
-const HEARTBEAT_INTERVAL_MS = 30000
-const HEARTBEAT_TIMEOUT_MS = 10000
+const HEARTBEAT_INTERVAL_MS = 45000
+const HEARTBEAT_TIMEOUT_MS = 30000
+const HANDSHAKE_TIMEOUT_MS = 30000
 
 export function getGatewayConfig() {
-  const url = process.env.CLAWDBOT_GATEWAY_URL?.trim() || 'ws://127.0.0.1:18789'
+  const isBrowser = typeof window !== 'undefined'
+  let url = process.env.CLAWDBOT_GATEWAY_URL?.trim() || 'ws://127.0.0.1:18789'
   const token = process.env.CLAWDBOT_GATEWAY_TOKEN?.trim() || ''
   const password = process.env.CLAWDBOT_GATEWAY_PASSWORD?.trim() || ''
 
+  if (isBrowser) {
+    // Dynamic resolution for client-side (browser)
+    // If the URL is localhost or 127.0.0.1, resolve it to the current server's hostname
+    if (url.includes('127.0.0.1') || url.includes('localhost')) {
+      const host = window.location.hostname
+      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+      try {
+        // Preserve the port if it exists in the original URL
+        const parsed = new URL(url.replace('ws://', 'http://').replace('wss://', 'https://'))
+        url = `${protocol}//${host}:${parsed.port || '18789'}`
+      } catch {
+        url = `${protocol}//${host}:18789`
+      }
+    }
+  } else {
+    // Server-side: default to loopback for local gateway connection
+    // If the URL was set to an external IP during build, we force it back to 127.0.0.1
+    // for the server-to-gateway connection to ensure loopback always works.
+    if (!process.env.CLAWDBOT_GATEWAY_URL && (url.includes('localhost') || url.includes('127.0.0.1'))) {
+      url = 'ws://127.0.0.1:18789'
+    }
+  }
+
   // For a minimal dashboard we require shared auth, otherwise we'd need a device identity signature.
-  if (!token && !password) {
+  // We only enforce this on the server; client-side might not have env vars (usually proxied).
+  if (!isBrowser && !token && !password) {
     throw new Error(
       'Missing gateway auth. Set CLAWDBOT_GATEWAY_TOKEN (recommended) or CLAWDBOT_GATEWAY_PASSWORD in the server environment.',
     )

@@ -1,5 +1,7 @@
 export const BASE_URL =
-  typeof window !== 'undefined' ? window.location.origin : 'http://localhost:4444'
+  typeof window !== 'undefined'
+    ? window.location.origin
+    : `http://localhost:${process.env.PORT || '3000'}`
 
 export type GatewaySessionUsage = {
   promptTokens?: number

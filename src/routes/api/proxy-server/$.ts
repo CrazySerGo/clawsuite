@@ -7,7 +7,7 @@ export const Route = createFileRoute('/api/proxy-server/$')({
         try {
           const targetPath = params._
           const url = new URL(request.url)
-          const targetUrl = new URL(targetPath + url.search, 'http://localhost:9222')
+          const targetUrl = new URL(targetPath + url.search, 'http://127.0.0.1:9222')
 
           const body = ['GET', 'HEAD'].includes(request.method) ? undefined : await request.arrayBuffer()
 

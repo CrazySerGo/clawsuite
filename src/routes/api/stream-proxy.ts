@@ -5,7 +5,7 @@ export const Route = createFileRoute('/api/stream-proxy')({
     handlers: {
       GET: async ({ request }) => {
         try {
-          const res = await fetch('http://localhost:9223', {
+          const res = await fetch('http://127.0.0.1:9223', {
             method: 'GET',
             headers: request.headers,
           })
@@ -23,7 +23,7 @@ export const Route = createFileRoute('/api/stream-proxy')({
       POST: async ({ request }) => {
         try {
           const body = await request.arrayBuffer()
-          const res = await fetch('http://localhost:9223', {
+          const res = await fetch('http://127.0.0.1:9223', {
             method: 'POST',
             headers: request.headers,
             body,

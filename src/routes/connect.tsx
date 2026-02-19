@@ -26,7 +26,7 @@ function ConnectRoute() {
           <div className="space-y-3">
             <p>Paste this into it:</p>
             <CodeBlock
-              content={`CLAWDBOT_GATEWAY_URL=ws://localhost:18789\nCLAWDBOT_GATEWAY_TOKEN=YOUR_TOKEN_HERE`}
+              content={`CLAWDBOT_GATEWAY_URL=ws://127.0.0.1:18789\nCLAWDBOT_GATEWAY_TOKEN=YOUR_TOKEN_HERE`}
               ariaLabel="Copy gateway token example"
               language="bash"
             />
@@ -58,7 +58,7 @@ function ConnectRoute() {
               <code className="inline-code">CLAWDBOT_GATEWAY_URL</code>
               <br />
               Your OpenClaw gateway endpoint (default is
-              <code className="inline-code">ws://localhost:18789</code>).
+              <code className="inline-code">ws://127.0.0.1:18789</code>).
             </p>
             <p>
               <code className="inline-code">CLAWDBOT_GATEWAY_TOKEN</code>{' '}
