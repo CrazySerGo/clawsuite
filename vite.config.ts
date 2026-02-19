@@ -78,6 +78,46 @@ const config = defineConfig(({ mode }) => {
             })
           },
         },
+        '/api/browser-proxy-internal': {
+          target: 'http://127.0.0.1:9222',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/browser-proxy-internal/, ''),
+        },
+        '/api/browser-stream-internal': {
+          target: 'http://127.0.0.1:9223',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/browser-stream-internal/, ''),
+          ws: true,
+        },
+      },
+    },
+    preview: {
+      host: '0.0.0.0',
+      allowedHosts: true,
+      proxy: {
+        '/gateway-ui': {
+          target: proxyTarget,
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/gateway-ui/, ''),
+          ws: true,
+          configure: (proxy) => {
+            proxy.on('proxyRes', (_proxyRes) => {
+              delete _proxyRes.headers['x-frame-options']
+              delete _proxyRes.headers['content-security-policy']
+            })
+          },
+        },
+        '/api/browser-proxy-internal': {
+          target: 'http://127.0.0.1:9222',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/browser-proxy-internal/, ''),
+        },
+        '/api/browser-stream-internal': {
+          target: 'http://127.0.0.1:9223',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/browser-stream-internal/, ''),
+          ws: true,
+        },
       },
     },
     plugins: [

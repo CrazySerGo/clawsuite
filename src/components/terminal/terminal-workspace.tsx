@@ -479,15 +479,25 @@ export function TerminalWorkspace({
       terminal.loadAddon(fitAddon)
       terminal.loadAddon(webLinks)
       terminal.open(container)
-      fitAddon.fit()
+
+      // Guard fit() and delay it slightly to ensure container has dimensions
+      window.setTimeout(() => {
+        try {
+          if (container.offsetWidth > 0 && container.offsetHeight > 0) {
+            fitAddon.fit()
+            void resizeSession(tab.id, terminal)
+          }
+        } catch (e) {
+          console.warn('[terminal] failed to fit on init', e)
+        }
+      }, 50)
 
       terminal.onData(function onData(data) {
         void sendInput(tab.id, data)
       })
 
-      terminalMapRef.current.set(tab.id, terminal)
+    terminalMapRef.current.set(tab.id, terminal)
       fitMapRef.current.set(tab.id, fitAddon)
-      void resizeSession(tab.id, terminal)
       void connectTab(tab)
     },
     [connectTab, resizeSession, sendInput],
@@ -562,8 +572,15 @@ export function TerminalWorkspace({
   useEffect(
     function fitOnResize() {
       function handleResize() {
-        for (const fitAddon of fitMapRef.current.values()) {
-          fitAddon.fit()
+        for (const [tabId, fitAddon] of fitMapRef.current.entries()) {
+          try {
+            const container = containerMapRef.current.get(tabId)
+            if (container && container.offsetWidth > 0) {
+              fitAddon.fit()
+            }
+          } catch (e) {
+            /* ignore hidden fit errors */
+          }
         }
         const snapshot = useTerminalPanelStore.getState().tabs
         for (const tab of snapshot) {
@@ -778,7 +795,10 @@ export function TerminalWorkspace({
                 ref={function assignContainer(node) {
                   if (node) {
                     containerMapRef.current.set(tab.id, node)
-                    ensureTerminalForTab(tab)
+                    // Only initialize terminal if it's the active tab OR already initialized
+                    if (isActive || terminalMapRef.current.has(tab.id)) {
+                      ensureTerminalForTab(tab)
+                    }
                     return
                   }
                   containerMapRef.current.delete(tab.id)

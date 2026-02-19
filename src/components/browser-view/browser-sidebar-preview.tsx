@@ -29,14 +29,14 @@ function readString(value: unknown): string {
 async function fetchBrowserStatus(): Promise<BrowserStatusResponse> {
   try {
     // Check local stream server status (same server the browser UI uses)
-    const res = await fetch('http://localhost:9223', {
+    const res = await fetch('/api/browser-stream-internal', {
       signal: AbortSignal.timeout(2000),
     })
     if (res.ok) {
       const data = (await res.json()) as Record<string, unknown>
       if (data.running) {
         // Get a fresh screenshot for the preview
-        const ssRes = await fetch('http://localhost:9223', {
+        const ssRes = await fetch('/api/browser-stream-internal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'screenshot' }),

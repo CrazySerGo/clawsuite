@@ -1,9 +1,19 @@
-import { randomUUID, generateKeyPairSync, createPrivateKey, createPublicKey, createHash, sign as cryptoSign } from 'node:crypto'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import * as os from 'node:os'
-import WebSocket from 'ws'
-import type { RawData } from 'ws'
+// WebSocket type for both Node.js and Browser
+type AnyWebSocket = {
+  readyState: number
+  OPEN: number
+  CONNECTING: number
+  CLOSED: number
+  send(data: string, cb?: (err?: Error) => void): void
+  close(): void
+  terminate?(): void
+  ping?(): void
+  on(event: string, listener: (...args: any[]) => void): void
+  off?(event: string, listener: (...args: any[]) => void): void
+  once(event: string, listener: (...args: any[]) => void): void
+  removeListener?(event: string, listener: (...args: any[]) => void): void
+  removeAllListeners?(event: string): void
+}
 
 export type GatewayFrame =
   | { type: 'req'; id: string; method: string; params?: unknown }
@@ -22,6 +32,13 @@ export type GatewayFrame =
       payloadJSON?: string
       seq?: number
     }
+
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return Math.random().toString(36).substring(2) + Date.now().toString(36)
+}
 
 type ConnectParams = {
   minProtocol: number
@@ -54,49 +71,112 @@ type InflightRequest = {
 }
 
 // ── Device Identity (Ed25519) ─────────────────────────────────────
-const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
-
-function base64UrlEncode(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+function getSpkiPrefix(): Uint8Array {
+  return new Uint8Array([
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+  ])
 }
 
-function derivePublicKeyRaw(pem: string): Buffer {
-  const spki = createPublicKey(pem).export({ type: 'spki', format: 'der' })
-  if (spki.length === ED25519_SPKI_PREFIX.length + 32 &&
-      spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX))
-    return spki.subarray(ED25519_SPKI_PREFIX.length)
-  return spki
+function base64UrlEncode(buf: Uint8Array | Buffer): string {
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(buf)) {
+    return buf
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '')
+  }
+  // Browser fallback
+  const base64 = btoa(String.fromCharCode.apply(null, Array.from(buf)))
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
-type DeviceIdentity = { deviceId: string; publicKeyPem: string; privateKeyPem: string }
+async function derivePublicKeyRaw(pem: string): Promise<Uint8Array> {
+  const { createPublicKey } = await import('node:crypto')
+  const spki = createPublicKey(pem).export({
+    type: 'spki',
+    format: 'der',
+  }) as Buffer
+  const prefix = getSpkiPrefix()
+  if (
+    spki.length === prefix.length + 32 &&
+    spki.subarray(0, prefix.length).every((b, i) => b === prefix[i])
+  ) {
+    return new Uint8Array(spki.subarray(prefix.length))
+  }
+  return new Uint8Array(spki)
+}
+
+type DeviceIdentity = {
+  deviceId: string
+  publicKeyPem: string
+  privateKeyPem: string
+}
 
 let _identity: DeviceIdentity | null = null
-function getDeviceIdentity(): DeviceIdentity {
+async function getDeviceIdentity(): Promise<DeviceIdentity> {
   if (_identity) return _identity
+
+  const fs = await import('node:fs')
+  const path = await import('node:path')
+  const os = await import('node:os')
+  const { generateKeyPairSync, createHash } = await import('node:crypto')
+
   const idPath = path.join(
-    process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw', 'state'),
-    'identity', 'clawsuite-device.json')
+    process.env.OPENCLAW_STATE_DIR ||
+      path.join(os.homedir(), '.openclaw', 'state'),
+    'identity',
+    'clawsuite-device.json',
+  )
   try {
     if (fs.existsSync(idPath)) {
       const p = JSON.parse(fs.readFileSync(idPath, 'utf8'))
       if (p?.version === 1 && p.deviceId && p.publicKeyPem && p.privateKeyPem) {
-        _identity = { deviceId: p.deviceId, publicKeyPem: p.publicKeyPem, privateKeyPem: p.privateKeyPem }
+        _identity = {
+          deviceId: p.deviceId,
+          publicKeyPem: p.publicKeyPem,
+          privateKeyPem: p.privateKeyPem,
+        }
         return _identity
       }
     }
-  } catch { /* regenerate */ }
+  } catch {
+    /* regenerate */
+  }
   const { publicKey, privateKey } = generateKeyPairSync('ed25519')
   const pubPem = publicKey.export({ type: 'spki', format: 'pem' }).toString()
   const privPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
-  const deviceId = createHash('sha256').update(derivePublicKeyRaw(pubPem)).digest('hex')
+  const deviceId = createHash('sha256')
+    .update(await derivePublicKeyRaw(pubPem))
+    .digest('hex')
   fs.mkdirSync(path.dirname(idPath), { recursive: true })
-  fs.writeFileSync(idPath, JSON.stringify({ version: 1, deviceId, publicKeyPem: pubPem, privateKeyPem: privPem, createdAtMs: Date.now() }, null, 2) + '\n', { mode: 0o600 })
+  fs.writeFileSync(
+    idPath,
+    JSON.stringify(
+      {
+        version: 1,
+        deviceId,
+        publicKeyPem: pubPem,
+        privateKeyPem: privPem,
+        createdAtMs: Date.now(),
+      },
+      null,
+      2,
+    ) + '\n',
+    { mode: 0o600 },
+  )
   _identity = { deviceId, publicKeyPem: pubPem, privateKeyPem: privPem }
   return _identity
 }
 
-function signPayload(privPem: string, payload: string): string {
-  return base64UrlEncode(cryptoSign(null, Buffer.from(payload, 'utf8'), createPrivateKey(privPem)) as unknown as Buffer)
+async function signPayload(privPem: string, payload: string): Promise<string> {
+  const { sign: cryptoSign, createPrivateKey } = await import('node:crypto')
+  return base64UrlEncode(
+    cryptoSign(
+      null,
+      Buffer.from(payload, 'utf8'),
+      createPrivateKey(privPem),
+    ) as unknown as Buffer,
+  )
 }
 
 // ── Constants ─────────────────────────────────────────────────────
@@ -119,21 +199,30 @@ export function getGatewayConfig() {
   return { url, token, password }
 }
 
-export function buildConnectParams(
+export async function buildConnectParams(
   token: string,
   password: string,
   nonce?: string,
-): ConnectParams {
-  const identity = getDeviceIdentity()
+): Promise<ConnectParams> {
+  const identity = await getDeviceIdentity()
   const role = 'operator'
   const scopes = ['operator.admin']
   const signedAtMs = Date.now()
   const clientId = 'openclaw-control-ui'
   const clientMode = 'ui'
   const version = nonce ? 'v2' : 'v1'
-  const parts = [version, identity.deviceId, clientId, clientMode, role, scopes.join(','), String(signedAtMs), token || '']
+  const parts = [
+    version,
+    identity.deviceId,
+    clientId,
+    clientMode,
+    role,
+    scopes.join(','),
+    String(signedAtMs),
+    token || '',
+  ]
   if (version === 'v2') parts.push(nonce || '')
-  const signature = signPayload(identity.privateKeyPem, parts.join('|'))
+  const signature = await signPayload(identity.privateKeyPem, parts.join('|'))
 
   return {
     minProtocol: 3,
@@ -142,9 +231,9 @@ export function buildConnectParams(
       id: clientId,
       displayName: 'clawsuite',
       version: 'dev',
-      platform: process.platform,
+      platform: typeof process !== 'undefined' ? process.platform : 'browser',
       mode: clientMode,
-      instanceId: randomUUID(),
+      instanceId: generateId(),
     },
     auth: {
       token: token || undefined,
@@ -154,7 +243,9 @@ export function buildConnectParams(
     scopes,
     device: {
       id: identity.deviceId,
-      publicKey: base64UrlEncode(derivePublicKeyRaw(identity.publicKeyPem)),
+      publicKey: base64UrlEncode(
+        await derivePublicKeyRaw(identity.publicKeyPem),
+      ),
       signature,
       signedAt: signedAtMs,
       nonce,
@@ -165,7 +256,7 @@ export function buildConnectParams(
 export type GatewayEventHandler = (frame: GatewayFrame) => void
 
 class GatewayClient {
-  private ws: WebSocket | null = null
+  private ws: AnyWebSocket | null = null
   private connectPromise: Promise<void> | null = null
   private reconnectTimer: NodeJS.Timeout | null = null
   private heartbeatInterval: NodeJS.Timeout | null = null
@@ -195,7 +286,7 @@ class GatewayClient {
 
     return new Promise<TPayload>((resolve, reject) => {
       const request: PendingRequest = {
-        id: randomUUID(),
+        id: generateId(),
         method,
         params,
         resolve: resolve as (value: unknown) => void,
@@ -214,7 +305,8 @@ class GatewayClient {
     if (this.destroyed) {
       throw new Error('Gateway client is shut down')
     }
-    if (this.authenticated && this.ws?.readyState === WebSocket.OPEN) {
+    const OPEN = this.ws?.OPEN ?? 1
+    if (this.authenticated && this.ws?.readyState === OPEN) {
       return
     }
     if (this.connectPromise) {
@@ -268,7 +360,72 @@ class GatewayClient {
         }
 
         const { url, token, password } = getGatewayConfig()
-        const ws = new WebSocket(url, { origin: 'http://localhost:3000', headers: { Origin: 'http://localhost:3000' } })
+
+        let ws: AnyWebSocket
+        if (typeof window !== 'undefined') {
+          // Browser use native WebSocket
+          const nativeWs = new (window as any).WebSocket(url)
+          // Shim Node.js EventEmitter-like API for the browser
+          const listeners = new Map<string, Set<Function>>()
+          ws = {
+            readyState: nativeWs.readyState,
+            OPEN: nativeWs.OPEN,
+            CONNECTING: nativeWs.CONNECTING,
+            CLOSED: nativeWs.CLOSED,
+            send: (data: string) => nativeWs.send(data),
+            close: () => nativeWs.close(),
+            on: (event: string, cb: Function) => {
+              if (!listeners.has(event)) listeners.set(event, new Set())
+              listeners.get(event)!.add(cb)
+              const wrapper = (e: any) => {
+                if (event === 'message') cb(e.data)
+                else if (event === 'open') cb()
+                else if (event === 'close') cb(e.code, e.reason)
+                else if (event === 'error') cb(e)
+              }
+              ;(cb as any)._wrapper = wrapper
+              nativeWs.addEventListener(event, wrapper)
+            },
+            once: (event: string, cb: Function) => {
+              const onceWrapper = (...args: any[]) => {
+                ws.removeListener!(event, onceWrapper)
+                cb(...args)
+              }
+              ws.on(event, onceWrapper)
+            },
+            removeListener: (event: string, cb: Function) => {
+              const wrapper = (cb as any)._wrapper || cb
+              nativeWs.removeEventListener(event, wrapper)
+              listeners.get(event)?.delete(cb)
+            },
+            removeAllListeners: (event: string) => {
+              listeners.get(event)?.forEach((cb) => ws.removeListener!(event, cb))
+            },
+          } as AnyWebSocket
+          // Update readyState periodically or via events
+          nativeWs.addEventListener('open', () => {
+            ws.readyState = nativeWs.readyState
+          })
+          nativeWs.addEventListener('close', () => {
+            ws.readyState = nativeWs.readyState
+          })
+        } else {
+          const WS = (await import('ws')).default
+          let origin = 'http://localhost:3000'
+          try {
+            const oUrl = new URL(url)
+            oUrl.protocol = oUrl.protocol === 'wss:' ? 'https:' : 'http:'
+            oUrl.pathname = ''
+            origin = oUrl.toString().replace(/\/$/, '')
+          } catch {
+            /* fallback */
+          }
+
+          ws = new WS(url, {
+            origin,
+            headers: { Origin: origin },
+          }) as unknown as AnyWebSocket
+        }
 
         this.clearReconnectTimer()
         this.attachSocket(ws)
@@ -276,7 +433,8 @@ class GatewayClient {
         await this.waitForOpen(ws, HANDSHAKE_TIMEOUT_MS)
 
         if (this.destroyed) {
-          ws.terminate()
+          if (ws.terminate) ws.terminate()
+          else ws.close()
           throw new Error('Gateway client is shut down')
         }
 
@@ -285,34 +443,43 @@ class GatewayClient {
 
         // Wait for connect.challenge to get nonce
         const nonce = await new Promise<string | undefined>((resolve) => {
-          const challengeHandler = (data: RawData) => {
+          let resolved = false
+          const challengeHandler = (data: any) => {
             try {
               const f = JSON.parse(rawDataToString(data))
-              if ((f.type === 'event' || f.type === 'evt') && f.event === 'connect.challenge') {
-                ws.removeListener('message', challengeHandler)
-                resolve(f.payload?.nonce || undefined)
-                return
+              if (
+                (f.type === 'event' || f.type === 'evt') &&
+                f.event === 'connect.challenge'
+              ) {
+                if (!resolved) {
+                  resolved = true
+                  if (ws.removeListener)
+                    ws.removeListener('message', challengeHandler)
+                  resolve(f.payload?.nonce || undefined)
+                }
               }
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
           }
-          ws.removeAllListeners('message')
           ws.on('message', challengeHandler)
           // Fallback if no challenge (older gateway)
           setTimeout(() => {
-            ws.removeListener('message', challengeHandler)
-            resolve(undefined)
+            if (!resolved) {
+              resolved = true
+              if (ws.removeListener)
+                ws.removeListener('message', challengeHandler)
+              resolve(undefined)
+            }
           }, 3000)
         })
-        // Re-attach the normal message handler
-        ws.removeAllListeners('message')
-        ws.on('message', (data: RawData) => { this.handleMessage(data) })
 
-        const connectId = randomUUID()
+        const connectId = generateId()
         const connectReq: GatewayFrame = {
           type: 'req',
           id: connectId,
           method: 'connect',
-          params: buildConnectParams(token, password, nonce),
+          params: await buildConnectParams(token, password, nonce),
         }
 
         await new Promise<void>((resolve, reject) => {
@@ -356,12 +523,12 @@ class GatewayClient {
     throw lastError || new Error('Failed to connect to gateway after retries')
   }
 
-  private attachSocket(ws: WebSocket) {
+  private attachSocket(ws: AnyWebSocket) {
     ws.on('message', (data) => {
       this.handleMessage(data)
     })
 
-    ws.on('pong', () => {
+    if (ws.on) ws.on('pong', () => {
       if (this.heartbeatTimeout) {
         clearTimeout(this.heartbeatTimeout)
         this.heartbeatTimeout = null
@@ -420,13 +587,13 @@ class GatewayClient {
     this.authenticated = false
     this.stopHeartbeat()
 
-    if (
-      ws &&
-      (ws.readyState === WebSocket.OPEN ||
-        ws.readyState === WebSocket.CONNECTING)
-    ) {
+    const OPEN = ws?.OPEN ?? 1
+    const CONNECTING = ws?.CONNECTING ?? 0
+
+    if (ws && (ws.readyState === OPEN || ws.readyState === CONNECTING)) {
       try {
-        ws.terminate()
+        if (ws.terminate) ws.terminate()
+        else ws.close()
       } catch {
         // ignore
       }
@@ -443,11 +610,8 @@ class GatewayClient {
   }
 
   private flushQueue() {
-    if (
-      !this.authenticated ||
-      !this.ws ||
-      this.ws.readyState !== WebSocket.OPEN
-    ) {
+    const OPEN = this.ws?.OPEN ?? 1
+    if (!this.authenticated || !this.ws || this.ws.readyState !== OPEN) {
       return
     }
 
@@ -498,13 +662,16 @@ class GatewayClient {
     this.stopHeartbeat()
 
     this.heartbeatInterval = setInterval(() => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      const OPEN = this.ws?.OPEN ?? 1
+      if (!this.ws || this.ws.readyState !== OPEN) {
         return
       }
 
       try {
-        this.ws.ping()
-        console.log('[gateway] ping sent')
+        if (this.ws.ping) {
+          this.ws.ping()
+          console.log('[gateway] ping sent')
+        }
       } catch {
         console.log('[gateway] ping FAILED to send')
         this.handleDisconnect(new Error('Gateway ping failed'))
@@ -535,12 +702,13 @@ class GatewayClient {
   }
 
   private async sendFrame(frame: GatewayFrame): Promise<void> {
-    if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+    const OPEN = this.ws?.OPEN ?? 1
+    if (!this.ws || this.ws.readyState !== OPEN) {
       throw new Error('Gateway connection not open')
     }
 
     await new Promise<void>((resolve, reject) => {
-      this.ws?.send(JSON.stringify(frame), (err) => {
+      this.ws?.send(JSON.stringify(frame), (err: any) => {
         if (err) {
           reject(err)
           return
@@ -550,8 +718,8 @@ class GatewayClient {
     })
   }
 
-  private waitForOpen(ws: WebSocket, timeoutMs: number): Promise<void> {
-    if (ws.readyState === WebSocket.OPEN) return Promise.resolve()
+  private waitForOpen(ws: AnyWebSocket, timeoutMs: number): Promise<void> {
+    if (ws.readyState === ws.OPEN) return Promise.resolve()
 
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -580,11 +748,10 @@ class GatewayClient {
     })
   }
 
-  private closeSocket(ws: WebSocket): Promise<void> {
-    if (
-      ws.readyState === WebSocket.CLOSED ||
-      ws.readyState === WebSocket.CLOSING
-    ) {
+  private closeSocket(ws: AnyWebSocket): Promise<void> {
+    const CLOSED = ws.CLOSED ?? 3
+    const CLOSING = (ws as any).CLOSING ?? 2
+    if (ws.readyState === CLOSED || ws.readyState === CLOSING) {
       return Promise.resolve()
     }
 
@@ -626,9 +793,14 @@ function nextReconnectDelayMs(attempt: number) {
   return Math.min(doubled, MAX_RECONNECT_DELAY_MS)
 }
 
-function rawDataToString(data: RawData): string {
+function rawDataToString(data: any): string {
   if (typeof data === 'string') return data
-  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
+  if (Array.isArray(data)) {
+    if (typeof Buffer !== 'undefined') {
+      return Buffer.concat(data).toString('utf8')
+    }
+    return data.map((b) => String.fromCharCode(b)).join('')
+  }
   return data.toString()
 }
 
@@ -638,33 +810,48 @@ declare global {
   // eslint-disable-next-line no-var
   var __clawsuite_gateway_client__: GatewayClient | undefined
 }
-const existingClient = (globalThis as any)[GW_KEY] as GatewayClient | undefined
-if (existingClient) {
-  console.log('[gateway] Reusing existing GatewayClient singleton (Vite SSR reload survived)')
-}
-let gatewayClient: GatewayClient = existingClient ?? new GatewayClient()
-if (!existingClient) {
+
+let gatewayClient: GatewayClient | null = null
+
+function getGatewayClient(): GatewayClient {
+  if (typeof window !== 'undefined') {
+    throw new Error('GatewayClient should not be used in the browser')
+  }
+
+  if (gatewayClient) return gatewayClient
+
+  const existingClient = (globalThis as any)[GW_KEY] as GatewayClient | undefined
+  if (existingClient) {
+    console.log(
+      '[gateway] Reusing existing GatewayClient singleton (Vite SSR reload survived)',
+    )
+    gatewayClient = existingClient
+    return gatewayClient
+  }
+
   console.log('[gateway] Created NEW GatewayClient (first load)')
+  gatewayClient = new GatewayClient()
+  ;(globalThis as any)[GW_KEY] = gatewayClient
+  return gatewayClient
 }
-;(globalThis as any)[GW_KEY] = gatewayClient
 
 export async function gatewayRpc<TPayload = unknown>(
   method: string,
   params?: unknown,
 ): Promise<TPayload> {
-  return gatewayClient.request<TPayload>(method, params)
+  return getGatewayClient().request<TPayload>(method, params)
 }
 
 export function onGatewayEvent(handler: GatewayEventHandler): () => void {
-  return gatewayClient.onEvent(handler)
+  return getGatewayClient().onEvent(handler)
 }
 
 export async function gatewayConnectCheck(): Promise<void> {
-  await gatewayClient.ensureConnected()
+  await getGatewayClient().ensureConnected()
 }
 
 export async function cleanupGatewayConnection(): Promise<void> {
-  await gatewayClient.shutdown()
+  await getGatewayClient().shutdown()
 }
 
 /**
@@ -672,7 +859,8 @@ export async function cleanupGatewayConnection(): Promise<void> {
  * Call this after updating CLAWDBOT_GATEWAY_URL / CLAWDBOT_GATEWAY_TOKEN.
  */
 export async function gatewayReconnect(): Promise<void> {
-  await gatewayClient.shutdown()
+  const client = getGatewayClient()
+  await client.shutdown()
   gatewayClient = new GatewayClient()
   ;(globalThis as any)[GW_KEY] = gatewayClient
   await gatewayClient.ensureConnected()
