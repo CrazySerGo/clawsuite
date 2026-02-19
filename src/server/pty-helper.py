@@ -41,7 +41,19 @@ def main():
         os.chdir(cwd)
         os.environ['TERM'] = 'xterm-256color'
         os.environ['COLORTERM'] = 'truecolor'
-        os.execvp(shell, [shell, '-i'])
+
+        try:
+            os.execvp(shell, [shell, '-i'])
+        except FileNotFoundError:
+            # Fallback shells if the requested one is missing
+            for fallback in ['/bin/bash', '/bin/sh', 'sh']:
+                if fallback != shell:
+                    try:
+                        os.execvp(fallback, [fallback, '-i'])
+                    except FileNotFoundError:
+                        continue
+            # If all fail, exit with error
+            sys.exit(1)
     else:
         # Parent: bridge stdin <-> master_fd <-> stdout
         os.close(slave_fd)

@@ -74,9 +74,11 @@ export const Route = createFileRoute('/api/sessions')({
 
           return json(normalizeSessions(payload))
         } catch (err) {
+          const message = err instanceof Error ? err.message : String(err)
+          console.error('[/api/sessions] GET error:', message)
           return json(
             {
-              error: err instanceof Error ? err.message : String(err),
+              error: message,
             },
             { status: 500 },
           )

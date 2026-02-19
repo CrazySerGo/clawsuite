@@ -46,8 +46,7 @@ type InflightRequest = {
 const RECONNECT_DELAYS_MS = [1000, 2000, 4000]
 const MAX_RECONNECT_DELAY_MS = 30000
 const HEARTBEAT_INTERVAL_MS = 30000
-const HEARTBEAT_TIMEOUT_MS = 45000
-const HANDSHAKE_TIMEOUT_MS = 30000
+const HEARTBEAT_TIMEOUT_MS = 10000
 
 export function getGatewayConfig() {
   const url = process.env.CLAWDBOT_GATEWAY_URL?.trim() || 'ws://127.0.0.1:18789'
@@ -185,8 +184,15 @@ class GatewayClient {
           await new Promise(resolve => setTimeout(resolve, 500 * attempt))
         }
 
-        const { url, token, password } = getGatewayConfig()
-        console.log(`[gateway] Connecting to ${url}...`)
+        let { url, token, password } = getGatewayConfig()
+
+        // Auto-fallback: if 127.0.0.1 fails, try localhost on next attempt
+        if (attempt === 1 && url.includes('127.0.0.1')) {
+          url = url.replace('127.0.0.1', 'localhost')
+        } else if (attempt === 2 && url.includes('localhost')) {
+          url = url.replace('localhost', '127.0.0.1')
+        }
+        console.log(`[gateway] Connecting to ${url} (attempt ${attempt + 1})...`)
         const ws = new WebSocket(url)
 
         this.clearReconnectTimer()
@@ -241,6 +247,7 @@ class GatewayClient {
         return // Success
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error))
+        console.error(`[gateway] Connection attempt ${attempt + 1} failed:`, lastError.message)
         if (this.ws) {
           this.ws.terminate()
           this.ws = null
@@ -310,6 +317,7 @@ class GatewayClient {
   }
 
   private handleDisconnect(error: Error) {
+    console.error('[gateway] Disconnected:', error.message)
     const ws = this.ws
     this.ws = null
     this.authenticated = false
@@ -518,7 +526,12 @@ export async function gatewayRpc<TPayload = unknown>(
   method: string,
   params?: unknown,
 ): Promise<TPayload> {
-  return gatewayClient.request<TPayload>(method, params)
+  try {
+    return await gatewayClient.request<TPayload>(method, params)
+  } catch (error) {
+    console.error(`[gateway] RPC Error (${method}):`, error instanceof Error ? error.message : String(error))
+    throw error
+  }
 }
 
 export function onGatewayEvent(handler: GatewayEventHandler): () => void {

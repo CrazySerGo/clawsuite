@@ -40,7 +40,7 @@ export function createTerminalSession(params: {
   const emitter = new EventEmitter()
   const sessionId = randomUUID()
 
-  const shell = params.command?.[0] ?? process.env.SHELL ?? '/bin/zsh'
+  const shell = params.command?.[0] ?? process.env.SHELL ?? '/bin/bash'
   let cwd = params.cwd ?? process.env.HOME ?? '/tmp'
   if (cwd.startsWith('~')) {
     cwd = cwd.replace('~', process.env.HOME ?? '/tmp')
