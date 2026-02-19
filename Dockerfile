@@ -27,6 +27,9 @@ WORKDIR /app
 
 ENV NODE_ENV=production
 
+# Install Python 3 for terminal support
+RUN apk add --no-cache python3
+
 # Create non-root user
 RUN addgroup -S clawsuite && adduser -S clawsuite -G clawsuite
 

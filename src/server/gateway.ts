@@ -1,5 +1,19 @@
-import WebSocket from 'ws'
-import type { RawData } from 'ws'
+// WebSocket type for both Node.js and Browser
+type AnyWebSocket = {
+  readyState: number
+  OPEN: number
+  CONNECTING: number
+  CLOSED: number
+  send(data: string, cb?: (err?: Error) => void): void
+  close(): void
+  terminate?(): void
+  ping?(): void
+  on(event: string, listener: (...args: any[]) => void): void
+  off?(event: string, listener: (...args: any[]) => void): void
+  once(event: string, listener: (...args: any[]) => void): void
+  removeListener?(event: string, listener: (...args: any[]) => void): void
+  removeAllListeners?(event: string): void
+}
 
 export type GatewayFrame =
   | { type: 'req'; id: string; method: string; params?: unknown }
@@ -240,7 +254,7 @@ export async function buildConnectParams(
 export type GatewayEventHandler = (frame: GatewayFrame) => void
 
 class GatewayClient {
-  private ws: WebSocket | null = null
+  private ws: AnyWebSocket | null = null
   private connectPromise: Promise<void> | null = null
   private reconnectTimer: NodeJS.Timeout | null = null
   private heartbeatInterval: NodeJS.Timeout | null = null
@@ -289,7 +303,8 @@ class GatewayClient {
     if (this.destroyed) {
       throw new Error('Gateway client is shut down')
     }
-    if (this.authenticated && this.ws?.readyState === WebSocket.OPEN) {
+    const OPEN = this.ws?.OPEN ?? 1
+    if (this.authenticated && this.ws?.readyState === OPEN) {
       return
     }
     if (this.connectPromise) {
@@ -343,7 +358,62 @@ class GatewayClient {
         }
 
         const { url, token, password } = getGatewayConfig()
-        const ws = new WebSocket(url, { origin: 'http://localhost:3000', headers: { Origin: 'http://localhost:3000' } })
+
+        let ws: AnyWebSocket
+        if (typeof window !== 'undefined') {
+          // Browser use native WebSocket
+          const nativeWs = new (window as any).WebSocket(url)
+          // Shim Node.js EventEmitter-like API for the browser
+          const listeners = new Map<string, Set<Function>>()
+          ws = {
+            readyState: nativeWs.readyState,
+            OPEN: nativeWs.OPEN,
+            CONNECTING: nativeWs.CONNECTING,
+            CLOSED: nativeWs.CLOSED,
+            send: (data: string) => nativeWs.send(data),
+            close: () => nativeWs.close(),
+            on: (event: string, cb: Function) => {
+              if (!listeners.has(event)) listeners.set(event, new Set())
+              listeners.get(event)!.add(cb)
+              const wrapper = (e: any) => {
+                if (event === 'message') cb(e.data)
+                else if (event === 'open') cb()
+                else if (event === 'close') cb(e.code, e.reason)
+                else if (event === 'error') cb(e)
+              }
+              ;(cb as any)._wrapper = wrapper
+              nativeWs.addEventListener(event, wrapper)
+            },
+            once: (event: string, cb: Function) => {
+              const onceWrapper = (...args: any[]) => {
+                ws.removeListener!(event, onceWrapper)
+                cb(...args)
+              }
+              ws.on(event, onceWrapper)
+            },
+            removeListener: (event: string, cb: Function) => {
+              const wrapper = (cb as any)._wrapper || cb
+              nativeWs.removeEventListener(event, wrapper)
+              listeners.get(event)?.delete(cb)
+            },
+            removeAllListeners: (event: string) => {
+              listeners.get(event)?.forEach((cb) => ws.removeListener!(event, cb))
+            },
+          } as AnyWebSocket
+          // Update readyState periodically or via events
+          nativeWs.addEventListener('open', () => {
+            ws.readyState = nativeWs.readyState
+          })
+          nativeWs.addEventListener('close', () => {
+            ws.readyState = nativeWs.readyState
+          })
+        } else {
+          const WS = (await import('ws')).default
+          ws = new WS(url, {
+            origin: 'http://localhost:3000',
+            headers: { Origin: 'http://localhost:3000' },
+          }) as unknown as AnyWebSocket
+        }
 
         this.clearReconnectTimer()
         this.attachSocket(ws)
@@ -351,7 +421,8 @@ class GatewayClient {
         await this.waitForOpen(ws, HANDSHAKE_TIMEOUT_MS)
 
         if (this.destroyed) {
-          ws.terminate()
+          if (ws.terminate) ws.terminate()
+          else ws.close()
           throw new Error('Gateway client is shut down')
         }
 
@@ -360,27 +431,33 @@ class GatewayClient {
 
         // Wait for connect.challenge to get nonce
         const nonce = await new Promise<string | undefined>((resolve) => {
-          const challengeHandler = (data: RawData) => {
+          const challengeHandler = (data: any) => {
             try {
               const f = JSON.parse(rawDataToString(data))
-              if ((f.type === 'event' || f.type === 'evt') && f.event === 'connect.challenge') {
-                ws.removeListener('message', challengeHandler)
+              if (
+                (f.type === 'event' || f.type === 'evt') &&
+                f.event === 'connect.challenge'
+              ) {
+                ws.removeListener!('message', challengeHandler)
                 resolve(f.payload?.nonce || undefined)
                 return
               }
-            } catch { /* ignore */ }
+            } catch {
+              /* ignore */
+            }
           }
-          ws.removeAllListeners('message')
+          if (ws.removeAllListeners) ws.removeAllListeners('message')
           ws.on('message', challengeHandler)
           // Fallback if no challenge (older gateway)
           setTimeout(() => {
-            ws.removeListener('message', challengeHandler)
+            if (ws.removeListener)
+              ws.removeListener('message', challengeHandler)
             resolve(undefined)
           }, 3000)
         })
         // Re-attach the normal message handler
-        ws.removeAllListeners('message')
-        ws.on('message', (data: RawData) => {
+        if (ws.removeAllListeners) ws.removeAllListeners('message')
+        ws.on('message', (data: any) => {
           this.handleMessage(data)
         })
 
@@ -433,12 +510,12 @@ class GatewayClient {
     throw lastError || new Error('Failed to connect to gateway after retries')
   }
 
-  private attachSocket(ws: WebSocket) {
+  private attachSocket(ws: AnyWebSocket) {
     ws.on('message', (data) => {
       this.handleMessage(data)
     })
 
-    ws.on('pong', () => {
+    if (ws.on) ws.on('pong', () => {
       if (this.heartbeatTimeout) {
         clearTimeout(this.heartbeatTimeout)
         this.heartbeatTimeout = null
@@ -497,13 +574,13 @@ class GatewayClient {
     this.authenticated = false
     this.stopHeartbeat()
 
-    if (
-      ws &&
-      (ws.readyState === WebSocket.OPEN ||
-        ws.readyState === WebSocket.CONNECTING)
-    ) {
+    const OPEN = ws?.OPEN ?? 1
+    const CONNECTING = ws?.CONNECTING ?? 0
+
+    if (ws && (ws.readyState === OPEN || ws.readyState === CONNECTING)) {
       try {
-        ws.terminate()
+        if (ws.terminate) ws.terminate()
+        else ws.close()
       } catch {
         // ignore
       }
@@ -520,11 +597,8 @@ class GatewayClient {
   }
 
   private flushQueue() {
-    if (
-      !this.authenticated ||
-      !this.ws ||
-      this.ws.readyState !== WebSocket.OPEN
-    ) {
+    const OPEN = this.ws?.OPEN ?? 1
+    if (!this.authenticated || !this.ws || this.ws.readyState !== OPEN) {
       return
     }
 
@@ -575,13 +649,16 @@ class GatewayClient {
     this.stopHeartbeat()
 
     this.heartbeatInterval = setInterval(() => {
-      if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
+      const OPEN = this.ws?.OPEN ?? 1
+      if (!this.ws || this.ws.readyState !== OPEN) {
         return
       }
 
       try {
-        this.ws.ping()
-        console.log('[gateway] ping sent')
+        if (this.ws.ping) {
+          this.ws.ping()
+          console.log('[gateway] ping sent')
+        }
       } catch {
         console.log('[gateway] ping FAILED to send')
         this.handleDisconnect(new Error('Gateway ping failed'))
@@ -627,8 +704,8 @@ class GatewayClient {
     })
   }
 
-  private waitForOpen(ws: WebSocket, timeoutMs: number): Promise<void> {
-    if (ws.readyState === WebSocket.OPEN) return Promise.resolve()
+  private waitForOpen(ws: AnyWebSocket, timeoutMs: number): Promise<void> {
+    if (ws.readyState === ws.OPEN) return Promise.resolve()
 
     return new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
@@ -657,11 +734,10 @@ class GatewayClient {
     })
   }
 
-  private closeSocket(ws: WebSocket): Promise<void> {
-    if (
-      ws.readyState === WebSocket.CLOSED ||
-      ws.readyState === WebSocket.CLOSING
-    ) {
+  private closeSocket(ws: AnyWebSocket): Promise<void> {
+    const CLOSED = ws.CLOSED ?? 3
+    const CLOSING = (ws as any).CLOSING ?? 2
+    if (ws.readyState === CLOSED || ws.readyState === CLOSING) {
       return Promise.resolve()
     }
 
@@ -703,7 +779,7 @@ function nextReconnectDelayMs(attempt: number) {
   return Math.min(doubled, MAX_RECONNECT_DELAY_MS)
 }
 
-function rawDataToString(data: RawData): string {
+function rawDataToString(data: any): string {
   if (typeof data === 'string') return data
   if (Array.isArray(data)) {
     if (typeof Buffer !== 'undefined') {

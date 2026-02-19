@@ -12,6 +12,7 @@
  * Non-chat routes show the sub-page content.
  */
 import { useCallback, useEffect, useState } from 'react'
+import { motion } from 'motion/react'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { ChatSidebar } from '@/screens/chat/components/chat-sidebar'
@@ -21,6 +22,7 @@ import { SIDEBAR_TOGGLE_EVENT } from '@/hooks/use-global-shortcuts'
 import { useSwipeNavigation } from '@/hooks/use-swipe-navigation'
 import { ChatPanel } from '@/components/chat-panel'
 import { ChatPanelToggle } from '@/components/chat-panel-toggle'
+import { Button } from '@/components/ui/button'
 import { LoginScreen } from '@/components/auth/login-screen'
 import { MobileTabBar } from '@/components/mobile-tab-bar'
 import { useMobileKeyboard } from '@/hooks/use-mobile-keyboard'
@@ -151,14 +153,53 @@ export function WorkspaceShell() {
       window.removeEventListener(SIDEBAR_TOGGLE_EVENT, handleToggleEvent)
   }, [toggleSidebar])
 
+  // Recovery timeout for "Initializing..." screen
+  const [showRetry, setShowRetry] = useState(false)
+  useEffect(() => {
+    if (!authState.checked) {
+      const timer = setTimeout(() => setShowRetry(true), 8000)
+      return () => clearTimeout(timer)
+    } else {
+      setShowRetry(false)
+    }
+  }, [authState.checked])
+
   // Show loading indicator while checking auth
   if (!authState.checked) {
     return (
-      <div className="flex items-center justify-center h-screen bg-surface">
-        <div className="text-center">
-          <div className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-accent-500 border-r-transparent mb-4" />
-          <p className="text-sm text-primary-500">Initializing ClawSuite...</p>
-        </div>
+      <div className="flex flex-col items-center justify-center h-screen bg-surface p-6 text-center">
+        <div className="inline-block h-10 w-10 animate-spin rounded-full border-4 border-accent-500 border-r-transparent mb-4" />
+        <p className="text-sm text-primary-500 font-medium">Initializing ClawSuite...</p>
+
+        {showRetry && (
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="mt-8 max-w-sm"
+          >
+            <p className="text-xs text-primary-400 mb-4">
+              Still waiting for the server to respond. This might be due to a slow connection or a server-side issue.
+            </p>
+            <div className="flex flex-col gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => window.location.reload()}
+                className="w-full"
+              >
+                Reload Page
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => (window.location.href = '/dashboard')}
+                className="w-full text-xs"
+              >
+                Force Dashboard (Skip Auth Check)
+              </Button>
+            </div>
+          </motion.div>
+        )}
       </div>
     )
   }

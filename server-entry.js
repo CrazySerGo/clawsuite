@@ -80,6 +80,10 @@ const httpServer = createServer(async (req, res) => {
     `http://${req.headers.host || 'localhost'}`,
   )
 
+  if (process.env.DEBUG_PROXY) {
+    console.log(`[proxy] ${req.method} ${url.pathname}${url.search} (Host: ${req.headers.host})`)
+  }
+
   // 1. Gateway UI Proxy
   if (url.pathname.startsWith('/gateway-ui')) {
     const gatewayUrl = process.env.CLAWDBOT_GATEWAY_URL || 'ws://127.0.0.1:18789'
@@ -95,13 +99,23 @@ const httpServer = createServer(async (req, res) => {
     const targetUrl = new URL(proxyPath + url.search, target)
 
     const transport = target.startsWith('https') ? https : http
+    const headers = { ...req.headers }
+    delete headers['connection']
+    delete headers['keep-alive']
+    delete headers['proxy-connection']
+    delete headers['transfer-encoding']
+    delete headers['te']
+    delete headers['upgrade']
+
     const proxyReq = transport.request(
       targetUrl,
       {
         method: req.method,
         headers: {
-          ...req.headers,
+          ...headers,
           host: targetUrl.host,
+          origin: targetUrl.origin,
+          referer: targetUrl.origin + '/',
         },
       },
       (proxyRes) => {
@@ -127,13 +141,23 @@ const httpServer = createServer(async (req, res) => {
     const proxyPath = url.pathname.replace(/^\/api\/browser-proxy-internal/, '') || '/'
     const targetUrl = new URL(proxyPath + url.search, target)
 
+    const headers = { ...req.headers }
+    delete headers['connection']
+    delete headers['keep-alive']
+    delete headers['proxy-connection']
+    delete headers['transfer-encoding']
+    delete headers['te']
+    delete headers['upgrade']
+
     const proxyReq = http.request(
       targetUrl,
       {
         method: req.method,
         headers: {
-          ...req.headers,
+          ...headers,
           host: targetUrl.host,
+          origin: targetUrl.origin,
+          referer: targetUrl.origin + '/',
         },
       },
       (proxyRes) => {
@@ -165,13 +189,23 @@ const httpServer = createServer(async (req, res) => {
     const proxyPath = url.pathname.replace(/^\/api\/browser-stream-internal/, '') || '/'
     const targetUrl = new URL(proxyPath + url.search, target)
 
+    const headers = { ...req.headers }
+    delete headers['connection']
+    delete headers['keep-alive']
+    delete headers['proxy-connection']
+    delete headers['transfer-encoding']
+    delete headers['te']
+    delete headers['upgrade']
+
     const proxyReq = http.request(
       targetUrl,
       {
         method: req.method,
         headers: {
-          ...req.headers,
+          ...headers,
           host: targetUrl.host,
+          origin: targetUrl.origin,
+          referer: targetUrl.origin + '/',
         },
       },
       (proxyRes) => {
