@@ -57,21 +57,39 @@ type InflightRequest = {
 }
 
 // ── Device Identity (Ed25519) ─────────────────────────────────────
-const ED25519_SPKI_PREFIX = Buffer.from('302a300506032b6570032100', 'hex')
-
-function base64UrlEncode(buf: Buffer): string {
-  return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+function getSpkiPrefix(): Uint8Array {
+  return new Uint8Array([
+    0x30, 0x2a, 0x30, 0x05, 0x06, 0x03, 0x2b, 0x65, 0x70, 0x03, 0x21, 0x00,
+  ])
 }
 
-async function derivePublicKeyRaw(pem: string): Promise<Buffer> {
+function base64UrlEncode(buf: Uint8Array | Buffer): string {
+  if (typeof Buffer !== 'undefined' && Buffer.isBuffer(buf)) {
+    return buf
+      .toString('base64')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_')
+      .replace(/=+$/g, '')
+  }
+  // Browser fallback
+  const base64 = btoa(String.fromCharCode.apply(null, Array.from(buf)))
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
+}
+
+async function derivePublicKeyRaw(pem: string): Promise<Uint8Array> {
   const { createPublicKey } = await import('node:crypto')
-  const spki = createPublicKey(pem).export({ type: 'spki', format: 'der' })
+  const spki = createPublicKey(pem).export({
+    type: 'spki',
+    format: 'der',
+  }) as Buffer
+  const prefix = getSpkiPrefix()
   if (
-    spki.length === ED25519_SPKI_PREFIX.length + 32 &&
-    spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
-  )
-    return spki.subarray(ED25519_SPKI_PREFIX.length)
-  return spki
+    spki.length === prefix.length + 32 &&
+    spki.subarray(0, prefix.length).every((b, i) => b === prefix[i])
+  ) {
+    return new Uint8Array(spki.subarray(prefix.length))
+  }
+  return new Uint8Array(spki)
 }
 
 type DeviceIdentity = {
@@ -687,7 +705,12 @@ function nextReconnectDelayMs(attempt: number) {
 
 function rawDataToString(data: RawData): string {
   if (typeof data === 'string') return data
-  if (Array.isArray(data)) return Buffer.concat(data).toString('utf8')
+  if (Array.isArray(data)) {
+    if (typeof Buffer !== 'undefined') {
+      return Buffer.concat(data).toString('utf8')
+    }
+    return data.map((b) => String.fromCharCode(b)).join('')
+  }
   return data.toString()
 }
 

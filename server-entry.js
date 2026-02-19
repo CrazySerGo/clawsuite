@@ -139,9 +139,19 @@ const httpServer = createServer(async (req, res) => {
       (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers)
         proxyRes.pipe(res)
-      }
+      },
     )
     proxyReq.on('error', (err) => {
+      if (err.code === 'ECONNREFUSED') {
+        res.writeHead(503, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            ok: false,
+            error: 'Browser proxy service not running',
+          }),
+        )
+        return
+      }
       res.writeHead(502)
       res.end(`Browser Proxy Error: ${err.message}`)
     })
@@ -167,9 +177,19 @@ const httpServer = createServer(async (req, res) => {
       (proxyRes) => {
         res.writeHead(proxyRes.statusCode, proxyRes.headers)
         proxyRes.pipe(res)
-      }
+      },
     )
     proxyReq.on('error', (err) => {
+      if (err.code === 'ECONNREFUSED') {
+        res.writeHead(503, { 'Content-Type': 'application/json' })
+        res.end(
+          JSON.stringify({
+            running: false,
+            error: 'Browser stream service not running',
+          }),
+        )
+        return
+      }
       res.writeHead(502)
       res.end(`Browser Stream Error: ${err.message}`)
     })
