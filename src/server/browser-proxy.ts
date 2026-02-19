@@ -36,7 +36,12 @@ export function getProxyPort(): number {
 }
 
 export function getProxyUrl(): string {
-  return `http://localhost:${PROXY_PORT}`
+  return `http://127.0.0.1:${PROXY_PORT}`
+}
+
+export function getExternalProxyUrl(): string {
+  // Return relative path for use behind ClawSuite's main port proxy
+  return `/api/browser-proxy-internal`
 }
 
 export function getCurrentTarget(): string {
@@ -182,7 +187,7 @@ export async function startProxy(): Promise<{ port: number; url: string }> {
               let html = Buffer.concat(chunks).toString('utf8')
 
               // Inject <base> tag + navigation interceptor
-              const proxyOrigin = `http://localhost:${PROXY_PORT}`
+              const proxyOrigin = getExternalProxyUrl()
               const baseTag = `<base href="${parsed.origin}/">
 <script>
 // Intercept link clicks to route through proxy

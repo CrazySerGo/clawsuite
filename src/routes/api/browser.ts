@@ -18,6 +18,7 @@ import {
   startProxy,
   stopProxy,
   getProxyUrl,
+  getExternalProxyUrl,
   getCurrentTarget,
 } from '../../server/browser-proxy'
 import { startBrowserStream } from '../../server/browser-stream'
@@ -33,7 +34,7 @@ export const Route = createFileRoute('/api/browser')({
           try {
             return json({
               ok: true,
-              proxyUrl: getProxyUrl(),
+              proxyUrl: getExternalProxyUrl(),
               target: getCurrentTarget(),
             })
           } catch (err) {
@@ -153,14 +154,15 @@ export const Route = createFileRoute('/api/browser')({
               if (!normalizedUrl.match(/^https?:\/\//))
                 normalizedUrl = `https://${normalizedUrl}`
               // Navigate the proxy
-              const proxyUrl = getProxyUrl()
+              const internalProxyUrl = getProxyUrl()
+              const externalProxyUrl = getExternalProxyUrl()
               await fetch(
-                `${proxyUrl}/__proxy__/navigate?url=${encodeURIComponent(normalizedUrl)}`,
+                `${internalProxyUrl}/__proxy__/navigate?url=${encodeURIComponent(normalizedUrl)}`,
               )
               return json({
                 ok: true,
-                proxyUrl,
-                iframeSrc: `${proxyUrl}/?url=${encodeURIComponent(normalizedUrl)}`,
+                proxyUrl: externalProxyUrl,
+                iframeSrc: `${externalProxyUrl}/?url=${encodeURIComponent(normalizedUrl)}`,
                 url: normalizedUrl,
               })
             }
@@ -168,16 +170,18 @@ export const Route = createFileRoute('/api/browser')({
             case 'proxy-status': {
               return json({
                 ok: true,
-                proxyUrl: getProxyUrl(),
+                proxyUrl: getExternalProxyUrl(),
                 target: getCurrentTarget(),
               })
             }
 
             case 'stream-start': {
               const result = await startBrowserStream()
+              const host = request.headers.get('host') || 'localhost'
+              const protocol = request.url.startsWith('https') ? 'wss' : 'ws'
               return json({
                 ok: true,
-                wsUrl: `ws://localhost:${result.port}`,
+                wsUrl: `${protocol}://${host}/api/browser-stream-internal`,
                 ...result,
               })
             }

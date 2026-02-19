@@ -78,6 +78,17 @@ const config = defineConfig(({ mode }) => {
             })
           },
         },
+        '/api/browser-proxy-internal': {
+          target: 'http://127.0.0.1:9222',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/browser-proxy-internal/, ''),
+        },
+        '/api/browser-stream-internal': {
+          target: 'http://127.0.0.1:9223',
+          changeOrigin: true,
+          rewrite: (path) => path.replace(/^\/api\/browser-stream-internal/, ''),
+          ws: true,
+        },
       },
     },
     plugins: [

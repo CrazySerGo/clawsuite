@@ -35,7 +35,7 @@ export function LocalBrowser() {
   // Poll stream server for status + thumbnail
   const pollStatus = useCallback(async () => {
     try {
-      const res = await fetch('http://localhost:9223', {
+      const res = await fetch('/api/browser-stream-internal', {
         signal: AbortSignal.timeout(2000),
       })
       if (!res.ok) {
@@ -53,7 +53,7 @@ export function LocalBrowser() {
 
       // Get thumbnail screenshot
       if (running) {
-        const ssRes = await fetch('http://localhost:9223', {
+        const ssRes = await fetch('/api/browser-stream-internal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action: 'screenshot' }),
@@ -81,7 +81,7 @@ export function LocalBrowser() {
   const sendAction = useCallback(
     async (action: string, params?: Record<string, unknown>) => {
       try {
-        const res = await fetch('http://localhost:9223', {
+        const res = await fetch('/api/browser-stream-internal', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ action, ...params }),
