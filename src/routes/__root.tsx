@@ -20,14 +20,6 @@ const themeScript = `
 (() => {
   window.process = window.process || { env: {}, platform: 'browser' };
   
-  // Auto-configure gateway URL for network access (mobile)
-  if (typeof window !== 'undefined') {
-    const hostname = window.location.hostname;
-    if (hostname !== 'localhost' && hostname !== '127.0.0.1') {
-      window.__GATEWAY_URL__ = 'ws://' + hostname + ':18789';
-    }
-  }
-  
   try {
     const stored = localStorage.getItem('openclaw-settings')
     const fallback = localStorage.getItem('chat-settings')

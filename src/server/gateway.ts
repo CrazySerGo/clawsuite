@@ -1,7 +1,3 @@
-import { randomUUID, generateKeyPairSync, createPrivateKey, createPublicKey, createHash, sign as cryptoSign } from 'node:crypto'
-import * as fs from 'node:fs'
-import * as path from 'node:path'
-import * as os from 'node:os'
 import WebSocket from 'ws'
 import type { RawData } from 'ws'
 
@@ -22,6 +18,13 @@ export type GatewayFrame =
       payloadJSON?: string
       seq?: number
     }
+
+function generateId(): string {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID()
+  }
+  return Math.random().toString(36).substring(2) + Date.now().toString(36)
+}
 
 type ConnectParams = {
   minProtocol: number
@@ -60,43 +63,88 @@ function base64UrlEncode(buf: Buffer): string {
   return buf.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '')
 }
 
-function derivePublicKeyRaw(pem: string): Buffer {
+async function derivePublicKeyRaw(pem: string): Promise<Buffer> {
+  const { createPublicKey } = await import('node:crypto')
   const spki = createPublicKey(pem).export({ type: 'spki', format: 'der' })
-  if (spki.length === ED25519_SPKI_PREFIX.length + 32 &&
-      spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX))
+  if (
+    spki.length === ED25519_SPKI_PREFIX.length + 32 &&
+    spki.subarray(0, ED25519_SPKI_PREFIX.length).equals(ED25519_SPKI_PREFIX)
+  )
     return spki.subarray(ED25519_SPKI_PREFIX.length)
   return spki
 }
 
-type DeviceIdentity = { deviceId: string; publicKeyPem: string; privateKeyPem: string }
+type DeviceIdentity = {
+  deviceId: string
+  publicKeyPem: string
+  privateKeyPem: string
+}
 
 let _identity: DeviceIdentity | null = null
-function getDeviceIdentity(): DeviceIdentity {
+async function getDeviceIdentity(): Promise<DeviceIdentity> {
   if (_identity) return _identity
+
+  const fs = await import('node:fs')
+  const path = await import('node:path')
+  const os = await import('node:os')
+  const { generateKeyPairSync, createHash } = await import('node:crypto')
+
   const idPath = path.join(
-    process.env.OPENCLAW_STATE_DIR || path.join(os.homedir(), '.openclaw', 'state'),
-    'identity', 'clawsuite-device.json')
+    process.env.OPENCLAW_STATE_DIR ||
+      path.join(os.homedir(), '.openclaw', 'state'),
+    'identity',
+    'clawsuite-device.json',
+  )
   try {
     if (fs.existsSync(idPath)) {
       const p = JSON.parse(fs.readFileSync(idPath, 'utf8'))
       if (p?.version === 1 && p.deviceId && p.publicKeyPem && p.privateKeyPem) {
-        _identity = { deviceId: p.deviceId, publicKeyPem: p.publicKeyPem, privateKeyPem: p.privateKeyPem }
+        _identity = {
+          deviceId: p.deviceId,
+          publicKeyPem: p.publicKeyPem,
+          privateKeyPem: p.privateKeyPem,
+        }
         return _identity
       }
     }
-  } catch { /* regenerate */ }
+  } catch {
+    /* regenerate */
+  }
   const { publicKey, privateKey } = generateKeyPairSync('ed25519')
   const pubPem = publicKey.export({ type: 'spki', format: 'pem' }).toString()
   const privPem = privateKey.export({ type: 'pkcs8', format: 'pem' }).toString()
-  const deviceId = createHash('sha256').update(derivePublicKeyRaw(pubPem)).digest('hex')
+  const deviceId = createHash('sha256')
+    .update(await derivePublicKeyRaw(pubPem))
+    .digest('hex')
   fs.mkdirSync(path.dirname(idPath), { recursive: true })
-  fs.writeFileSync(idPath, JSON.stringify({ version: 1, deviceId, publicKeyPem: pubPem, privateKeyPem: privPem, createdAtMs: Date.now() }, null, 2) + '\n', { mode: 0o600 })
+  fs.writeFileSync(
+    idPath,
+    JSON.stringify(
+      {
+        version: 1,
+        deviceId,
+        publicKeyPem: pubPem,
+        privateKeyPem: privPem,
+        createdAtMs: Date.now(),
+      },
+      null,
+      2,
+    ) + '\n',
+    { mode: 0o600 },
+  )
   _identity = { deviceId, publicKeyPem: pubPem, privateKeyPem: privPem }
   return _identity
 }
 
-function signPayload(privPem: string, payload: string): string {
-  return base64UrlEncode(cryptoSign(null, Buffer.from(payload, 'utf8'), createPrivateKey(privPem)) as unknown as Buffer)
+async function signPayload(privPem: string, payload: string): Promise<string> {
+  const { sign: cryptoSign, createPrivateKey } = await import('node:crypto')
+  return base64UrlEncode(
+    cryptoSign(
+      null,
+      Buffer.from(payload, 'utf8'),
+      createPrivateKey(privPem),
+    ) as unknown as Buffer,
+  )
 }
 
 // ── Constants ─────────────────────────────────────────────────────
@@ -119,21 +167,30 @@ export function getGatewayConfig() {
   return { url, token, password }
 }
 
-export function buildConnectParams(
+export async function buildConnectParams(
   token: string,
   password: string,
   nonce?: string,
-): ConnectParams {
-  const identity = getDeviceIdentity()
+): Promise<ConnectParams> {
+  const identity = await getDeviceIdentity()
   const role = 'operator'
   const scopes = ['operator.admin']
   const signedAtMs = Date.now()
   const clientId = 'openclaw-control-ui'
   const clientMode = 'ui'
   const version = nonce ? 'v2' : 'v1'
-  const parts = [version, identity.deviceId, clientId, clientMode, role, scopes.join(','), String(signedAtMs), token || '']
+  const parts = [
+    version,
+    identity.deviceId,
+    clientId,
+    clientMode,
+    role,
+    scopes.join(','),
+    String(signedAtMs),
+    token || '',
+  ]
   if (version === 'v2') parts.push(nonce || '')
-  const signature = signPayload(identity.privateKeyPem, parts.join('|'))
+  const signature = await signPayload(identity.privateKeyPem, parts.join('|'))
 
   return {
     minProtocol: 3,
@@ -142,9 +199,9 @@ export function buildConnectParams(
       id: clientId,
       displayName: 'clawsuite',
       version: 'dev',
-      platform: process.platform,
+      platform: typeof process !== 'undefined' ? process.platform : 'browser',
       mode: clientMode,
-      instanceId: randomUUID(),
+      instanceId: generateId(),
     },
     auth: {
       token: token || undefined,
@@ -195,7 +252,7 @@ class GatewayClient {
 
     return new Promise<TPayload>((resolve, reject) => {
       const request: PendingRequest = {
-        id: randomUUID(),
+        id: generateId(),
         method,
         params,
         resolve: resolve as (value: unknown) => void,
@@ -305,14 +362,16 @@ class GatewayClient {
         })
         // Re-attach the normal message handler
         ws.removeAllListeners('message')
-        ws.on('message', (data: RawData) => { this.handleMessage(data) })
+        ws.on('message', (data: RawData) => {
+          this.handleMessage(data)
+        })
 
-        const connectId = randomUUID()
+        const connectId = generateId()
         const connectReq: GatewayFrame = {
           type: 'req',
           id: connectId,
           method: 'connect',
-          params: buildConnectParams(token, password, nonce),
+          params: await buildConnectParams(token, password, nonce),
         }
 
         await new Promise<void>((resolve, reject) => {
@@ -638,33 +697,48 @@ declare global {
   // eslint-disable-next-line no-var
   var __clawsuite_gateway_client__: GatewayClient | undefined
 }
-const existingClient = (globalThis as any)[GW_KEY] as GatewayClient | undefined
-if (existingClient) {
-  console.log('[gateway] Reusing existing GatewayClient singleton (Vite SSR reload survived)')
-}
-let gatewayClient: GatewayClient = existingClient ?? new GatewayClient()
-if (!existingClient) {
+
+let gatewayClient: GatewayClient | null = null
+
+function getGatewayClient(): GatewayClient {
+  if (typeof window !== 'undefined') {
+    throw new Error('GatewayClient should not be used in the browser')
+  }
+
+  if (gatewayClient) return gatewayClient
+
+  const existingClient = (globalThis as any)[GW_KEY] as GatewayClient | undefined
+  if (existingClient) {
+    console.log(
+      '[gateway] Reusing existing GatewayClient singleton (Vite SSR reload survived)',
+    )
+    gatewayClient = existingClient
+    return gatewayClient
+  }
+
   console.log('[gateway] Created NEW GatewayClient (first load)')
+  gatewayClient = new GatewayClient()
+  ;(globalThis as any)[GW_KEY] = gatewayClient
+  return gatewayClient
 }
-;(globalThis as any)[GW_KEY] = gatewayClient
 
 export async function gatewayRpc<TPayload = unknown>(
   method: string,
   params?: unknown,
 ): Promise<TPayload> {
-  return gatewayClient.request<TPayload>(method, params)
+  return getGatewayClient().request<TPayload>(method, params)
 }
 
 export function onGatewayEvent(handler: GatewayEventHandler): () => void {
-  return gatewayClient.onEvent(handler)
+  return getGatewayClient().onEvent(handler)
 }
 
 export async function gatewayConnectCheck(): Promise<void> {
-  await gatewayClient.ensureConnected()
+  await getGatewayClient().ensureConnected()
 }
 
 export async function cleanupGatewayConnection(): Promise<void> {
-  await gatewayClient.shutdown()
+  await getGatewayClient().shutdown()
 }
 
 /**
@@ -672,7 +746,8 @@ export async function cleanupGatewayConnection(): Promise<void> {
  * Call this after updating CLAWDBOT_GATEWAY_URL / CLAWDBOT_GATEWAY_TOKEN.
  */
 export async function gatewayReconnect(): Promise<void> {
-  await gatewayClient.shutdown()
+  const client = getGatewayClient()
+  await client.shutdown()
   gatewayClient = new GatewayClient()
   ;(globalThis as any)[GW_KEY] = gatewayClient
   await gatewayClient.ensureConnected()

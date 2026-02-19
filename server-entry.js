@@ -184,11 +184,6 @@ const httpServer = createServer(async (req, res) => {
   }
 
   // Fall through to SSR handler
-  const url = new URL(
-    req.url || '/',
-    `http://${req.headers.host || 'localhost'}`,
-  )
-
   const headers = new Headers()
   for (const [key, value] of Object.entries(req.headers)) {
     if (value) headers.set(key, Array.isArray(value) ? value.join(', ') : value)
